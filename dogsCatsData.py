@@ -2,155 +2,95 @@
 import matplotlib.pyplot as plt
 import os
 import cv2
-from skimage import transform
-from keras.preprocessing.image import ImageDataGenerator
-from keras.utils.np_utils import to_categorical
 import numpy as np
-from sklearn.model_selection import train_test_split
- 
-file_dir = "C:/Users/Jan/Documents/DogsAndCats"
-img_size = 64
-img_depth = 3
+from skimage import transform
 
-# Load Cats (0) and Dogs (1) from images to NumpyArray
-def extract_cats_vs_dogs(file_dir):
-    cats_dir = file_dir + "/cat/"
-    dogs_dir = file_dir + "/dog/"
+def extract_images(file_dir, classes, img_width, img_height, img_depth):
+    """Function to extract data from images to numpy array.
+       If the dataset images havn't got the same shape it will be resized.
+       This numpy array will have the shape (num_samples, width, height, channels).
+       The numpy array data will be stored to npy files for later on, fast read-in data.
+       The dataset has to be stored one class per sub-folder in the given file_dir.
+       The values are in [0, 255] ant the targets are the class nums.
+    Args:
+        file_dir (str): Filepath to the dataset.
+        classes (list of strs): List of class names.
+        img_width, img_height, img_depth (int): Dimension of an image
+    """
+    # Allowed datatypes to read-in, just in case to skip files that are no images
+    allowed_data_types = ["jpg", "jpeg", "png", "tiff", "bmp"]
+    # Save the full-path for each classes sub-folder
+    classes_dir = [file_dir + "/" + str(cl) + "/" for cl in classes]
+    # Save all filenames for each class
+    classes_files = [[name for name in os.listdir(class_dir) 
+        if name.split(".")[-1] in allowed_data_types] 
+        for class_dir in classes_dir]
+    # Number of images per class, to create empty numpy array
+    num_samples_per_class = [len(class_files) for class_files in classes_files]
 
-    print("Delete no jpg images!")
-    for f in os.listdir(cats_dir):
-        if f.split(".")[-1] != "jpg":
-            print("Removing file: ", f)
-            os.remove(cats_dir + f)
-
-    print("Delete no jpg images!")
-    for f in os.listdir(dogs_dir):
-        if f.split(".")[-1] != "jpg":
-            print("Removing file: ", f)
-            os.remove(dogs_dir + f)
-
-    num_cats = len([name for name in os.listdir(cats_dir)])
-    num_dogs = len([name for name in os.listdir(dogs_dir)])
-
-    x = np.empty(shape=(num_cats + num_dogs, img_size, img_size, img_depth), dtype=np.float32)
-    y = np.zeros(shape=(num_cats + num_dogs), dtype=np.float32)
+    # Create empty x and y array
+    x = np.empty(shape=(np.sum(num_samples_per_class), img_width, img_height, img_depth), dtype=np.float32)
+    y = np.zeros(shape=(np.sum(num_samples_per_class)), dtype=np.float32)
     cnt = 0
 
-    print("Start reading in cat images!")
-    for f in os.listdir(cats_dir):
-        try:
-            if img_depth == 1:
-                img = cv2.imread(cats_dir + f, 0)
-            else:
-                img = cv2.imread(cats_dir + f)
-            x[cnt] = transform.resize(img, (img_size, img_size, img_depth))
-            y[cnt] = 0
-            cnt += 1
-        except:
-            pass
+    # For each class, iterate over all images.
+    for class_num, (class_files, class_dir) in enumerate(zip(classes_files, classes_dir)):
+        for f in class_files:
+            # Load all images with cv2 function as uint8 type
+            try:
+                # If it will be a grayscale image
+                if img_depth == 1:
+                    img = cv2.imread(class_dir + f, 0)
+                # If it will be a regular rgb image
+                else:
+                    img = cv2.imread(class_dir + f)
+                # Resize image to defined image_size
+                img = transform.resize(img, (img_width, img_height, img_depth))
+                x[cnt] = img
+                y[cnt] = class_num
+            # Exception will be thrown if image is corrupted
+            except:
+                y[cnt] = -1
 
-    print("Start reading in dog images!")
-    for f in os.listdir(dogs_dir):
-        try:
-            if img_depth == 1:
-                img = cv2.imread(dogs_dir + f, 0)
-            else:
-                img = cv2.imread(dogs_dir + f)
-            x[cnt] = transform.resize(img, (img_size, img_size, img_depth))
-            y[cnt] = 1
-            cnt += 1
-        except:
-            pass
+    # Delete corrupted images
+    indx = [i for i in range(x.shape[0]) if y[i] == -1]
+    x = np.delete(x, indx, axis=0)
+    y = np.delete(y, indx, axis=0)
 
+    # Store data to npy files
     np.save(file_dir + "/x.npy", x)
     np.save(file_dir + "/y.npy", y)
 
-def load_cats_vs_dogs(file_dir):
+# Load images from npy file
+def load_images(file_dir):
+    """Function to load image data from npy files.
+    Args:
+        file_dir (str): Filepath to the dataset.
+    Returns:
+        x, y(ndarray): Image dataset
+    """
     x = np.load(file_dir + "/x.npy")
     y = np.load(file_dir + "/y.npy")
-    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3, random_state=42)
-    return (x_train, y_train), (x_test, y_test)
+    return x, y
 
-class CATSDOGS:
-    x_train, y_train, x_test, y_test = None, None, None, None
-    train_size, test_size = 0, 0
-
-    def __init__(self, file_dir):
-        (self.x_train, self.y_train), (self.x_test, self.y_test) = load_cats_vs_dogs(file_dir)
-        # reshape
-        self.x_train = self.x_train.reshape(self.x_train.shape[0], img_size, img_size, img_depth)
-        self.x_test = self.x_test.reshape(self.x_test.shape[0], img_size, img_size, img_depth)
-        # convert from int to float
-        self.x_train = self.x_train.astype('float32')
-        self.x_test = self.x_test.astype('float32')
-        # rescale values
-        # self.x_train /= 255.0
-        # self.x_test /= 255.0
-        # Save dataset sizes
-        self.train_size = self.x_train.shape[0]
-        self.test_size = self.x_test.shape[0]
-        # Create one hot array
-        self.y_train = to_categorical(self.y_train, 2)
-        self.y_test = to_categorical(self.y_test, 2)
-
-    def data_augmentation(self, augment_size=5000): 
-        image_generator = ImageDataGenerator(
-            rotation_range=10,
-            zoom_range = 0.05, 
-            width_shift_range=0.07,
-            height_shift_range=0.07,
-            horizontal_flip=False,
-            vertical_flip=False, 
-            data_format="channels_last",
-            zca_whitening=True)
-        # fit data for zca whitening
-        image_generator.fit(self.x_train, augment=True)
-        # get transformed images
-        randidx = np.random.randint(self.train_size, size=augment_size)
-        x_augmented = self.x_train[randidx].copy()
-        y_augmented = self.y_train[randidx].copy()
-        x_augmented = image_generator.flow(x_augmented, np.zeros(augment_size),
-                                    batch_size=augment_size, shuffle=False).next()[0]
-        # append augmented data to trainset
-        self.x_train = np.concatenate((self.x_train, x_augmented))
-        self.y_train = np.concatenate((self.y_train, y_augmented))
-        self.train_size = self.x_train.shape[0]
-        self.test_size = self.x_test.shape[0]
-
-    def next_train_batch(self, batch_size):
-        randidx = np.random.randint(self.train_size, size=batch_size)
-        epoch_x = self.x_train[randidx]
-        epoch_y = self.y_train[randidx]
-        return epoch_x, epoch_y
-    
-    def next_test_batch(self, batch_size):
-        randidx = np.random.randint(self.test_size, size=batch_size)
-        epoch_x = self.x_test[randidx]
-        epoch_y = self.y_test[randidx]
-        return epoch_x, epoch_y
-
-    def shuffle_train(self):
-        indices = np.random.permutation(self.train_size)
-        self.x_train = self.x_train[indices]
-        self.y_train = self.y_train[indices]
-
+# Example of usage
 if __name__ == "__main__":
-    extracted = True
-    if extracted == False:
-        extract_cats_vs_dogs(file_dir)
-        load_cats_vs_dogs(file_dir)
+    file_dir = "C:/Users/Jan/Documents/DogsAndCats"
+    img_size = 64
+    img_depth = 3
+    classes = ["cat", "dog"]
+    extract_images(file_dir, classes, img_size, img_size, img_depth)
+    x, y = load_images(file_dir)
 
-    if extracted == True:
-        data = CATSDOGS(file_dir)
-        
-        indx = np.random.randint(0, data.train_size, 10)
-        imgs = data.x_train[indx]
-        labels = data.y_train[indx]
+    indx = np.random.randint(0, x.shape[0], 10)
+    imgs = x[indx]
+    labels = y[indx]
 
-        for img, label in zip(imgs, labels):
-            if img_depth == 1:
-                plt.imshow(img.reshape((img_size, img_size)))
-            else:
-                plt.imshow(img)
-            plt.title(label)
-            plt.show()
+    for img, label in zip(imgs, labels):
+        print(img)
+        if img_depth == 1:
+            plt.imshow(img.reshape((img_size, img_size)))
+        else:
+            plt.imshow(img)
+        plt.title(label)
+        plt.show()
