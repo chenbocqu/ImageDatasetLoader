@@ -6,12 +6,11 @@ import numpy as np
 from skimage import transform
 
 def extract_images(file_dir, classes, img_width, img_height, img_depth):
-    """Function to extract data from images to numpy array.
+    """Function to extract data from images to float32 numpy arrays in [0, 255].
        If the dataset images havn't got the same shape it will be resized.
-       This numpy array will have the shape (num_samples, width, height, channels).
-       The numpy array data will be stored to npy files for later on, fast read-in data.
+       This numpy arrays will have the shape NWHC.
+       The data will be saved to npy files for later on, fast reading in.
        The dataset has to be stored one class per sub-folder in the given file_dir.
-       The values are in [0, 255] ant the targets are the class nums.
     Args:
         file_dir (str): Filepath to the dataset.
         classes (list of strs): List of class names.
@@ -22,7 +21,7 @@ def extract_images(file_dir, classes, img_width, img_height, img_depth):
     # Save the full-path for each classes sub-folder
     classes_dir = [file_dir + "/" + str(cl) + "/" for cl in classes]
     # Save all filenames for each class
-    classes_files = [[name for name in os.listdir(class_dir) 
+    classes_files = [[class_dir + name for name in os.listdir(class_dir) 
         if name.split(".")[-1] in allowed_data_types] 
         for class_dir in classes_dir]
     # Number of images per class, to create empty numpy array
@@ -30,26 +29,25 @@ def extract_images(file_dir, classes, img_width, img_height, img_depth):
 
     # Create empty x and y array
     x = np.empty(shape=(np.sum(num_samples_per_class), img_width, img_height, img_depth), dtype=np.float32)
-    y = np.zeros(shape=(np.sum(num_samples_per_class)), dtype=np.float32)
+    y = np.empty(shape=(np.sum(num_samples_per_class)), dtype=np.float32)
     cnt = 0
 
     # For each class, iterate over all images.
-    for class_num, (class_files, class_dir) in enumerate(zip(classes_files, classes_dir)):
+    for class_num, (class_files) in enumerate(classes_files):
         for f in class_files:
-            # Load all images with cv2 function as uint8 type
-            try:
-                # If it will be a grayscale image
-                if img_depth == 1:
-                    img = cv2.imread(class_dir + f, 0)
-                # If it will be a regular rgb image
-                else:
-                    img = cv2.imread(class_dir + f)
+            # If it will be a grayscale image
+            if img_depth == 1:
+                img = cv2.imread(f, 0)
+            # If it will be a regular rgb image
+            else:
+                img = cv2.imread(f)
+            if not img is None:
                 # Resize image to defined image_size
-                img = transform.resize(img, (img_width, img_height, img_depth))
+                img = cv2.resize(img, (img_width, img_height))
                 x[cnt] = img
                 y[cnt] = class_num
-            # Exception will be thrown if image is corrupted
-            except:
+                cnt += 1
+            else:
                 y[cnt] = -1
 
     # Delete corrupted images
@@ -75,22 +73,10 @@ def load_images(file_dir):
 
 # Example of usage
 if __name__ == "__main__":
-    file_dir = "C:/Users/Jan/Documents/DogsAndCats"
+    file_dir = "PATH"
     img_size = 64
     img_depth = 3
     classes = ["cat", "dog"]
+
     extract_images(file_dir, classes, img_size, img_size, img_depth)
     x, y = load_images(file_dir)
-
-    indx = np.random.randint(0, x.shape[0], 10)
-    imgs = x[indx]
-    labels = y[indx]
-
-    for img, label in zip(imgs, labels):
-        print(img)
-        if img_depth == 1:
-            plt.imshow(img.reshape((img_size, img_size)))
-        else:
-            plt.imshow(img)
-        plt.title(label)
-        plt.show()
